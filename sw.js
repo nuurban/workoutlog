@@ -1,6 +1,6 @@
 /* Service worker: keeps the app working offline.
    When you change any app file, bump VERSION so phones pick up the new copy. */
-const VERSION = 'v9';
+const VERSION = 'v10';
 const CACHE = 'workout-log-' + VERSION;
 const FONTS = 'workout-log-fonts';
 const ASSETS = [
@@ -14,7 +14,8 @@ self.addEventListener('message', e => {
 });
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // cache:'reload' skips the browser's own HTTP cache (GitHub Pages allows 10 minutes), so a new version never stores old files
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS.map(u => new Request(u, {cache:'reload'})))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
@@ -36,7 +37,8 @@ self.addEventListener('fetch', e => {
   e.respondWith((async () => {
     const cache = await caches.open(sameOrigin ? CACHE : FONTS);
     const hit = await cache.match(req, {ignoreSearch: sameOrigin});
-    const refresh = fetch(req).then(res => {
+    const network = sameOrigin ? fetch(req.mode === 'navigate' ? req.url : req, {cache:'no-cache'}) : fetch(req);   // always revalidate our own files
+    const refresh = network.then(res => {
       if(res && (res.ok || res.type === 'opaque')) cache.put(req, res.clone());
       return res;
     }).catch(() => null);

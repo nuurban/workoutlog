@@ -986,7 +986,12 @@ render(false);
 setSync('Saved on this device');
 try{ if(navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){}
 if('serviceWorker' in navigator){
-  window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(() => {}); });
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js', {updateViaCache:'none'}).then(reg => {
+      // An installed iPhone app is often resumed, not reopened, so look for a new version each time it comes back to the front.
+      document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible') reg.update().catch(() => {}); });
+    }).catch(() => {});
+  });
   // Show the running version (set by VERSION in sw.js). Asked once at startup, so after an update the first open
   // still shows the old number and the second open shows the new one.
   const verEl = document.getElementById('ver');
