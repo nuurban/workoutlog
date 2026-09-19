@@ -1,3 +1,7 @@
+
+
+https://github.com/user-attachments/assets/863839b1-6b51-404d-b5d0-a10ad8589b29
+
 # Workout log (iPhone web app)
 
 Everything you log stays on your phone. There is no account and no sync.
