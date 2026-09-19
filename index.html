@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Workout log</title>
+<meta name="description" content="Track sets, reps, weight and machine settings.">
+<meta name="theme-color" content="#E3E5E0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#11171E" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Workout log">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <h1>Workout log</h1>
+    <span id="sync" class="sync" role="status"></span>
+  </header>
+  <main id="root"></main>
+</div>
+<nav class="nav" aria-label="Sections">
+  <button id="tab-log" type="button">Log</button>
+  <button id="tab-hist" type="button">History</button>
+</nav>
+<script src="app.js"></script>
+</body>
+</html>
