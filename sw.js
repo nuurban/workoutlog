@@ -1,6 +1,6 @@
 /* Service worker: keeps the app working offline.
    When you change any app file, bump VERSION so phones pick up the new copy. */
-const VERSION = 'v5';
+const VERSION = 'v9';
 const CACHE = 'workout-log-' + VERSION;
 const FONTS = 'workout-log-fonts';
 const ASSETS = [

@@ -101,7 +101,7 @@ function cacheLocal(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); re
 let state = loadLocal() || normalize(seed());
 const ui = {
   tab:'log', selected:null, draft:null, error:'', adding:false, confirmRemove:false, editing:false, armedId:null, metric:'top', logDate:null,
-  histMachine:null, flashId:null, editNote:null, editSettings:false, armedGroup:null, groupMsg:'', dragging:false, importPending:null, importMsg:'', presetView:false, presetEdit:false, presetSel:{}, armedPreset:null, armedReset:false
+  histMachine:null, flashId:null, editNote:null, editSettings:false, armedGroup:null, groupMsg:'', dragging:false, importPending:null, importMsg:'', presetView:false, presetEdit:false, presetSel:{}, armedPreset:null, armedReset:false, armedErase:false
 };
 
 /* ---------- helpers ---------- */
@@ -300,15 +300,17 @@ function entryView(m){
   wrap.append(
     h('button',{type:'button',class:'back',onclick:()=>{ ui.selected = null; ui.error=''; render(false); }},
       chevron(), 'All machines/exercises'),
-    h('h2',{class:'m-title',text:m.name}),
-    h('div',{class:'m-group'}, h('select',{class:'txt gsel','aria-label':'Body part',onchange:e => {
-      m.group = e.target.value; state.collapsed = state.collapsed.filter(g => g !== m.group); commit(); render();
-    }}, sortedGroups(m.group).map(g => h('option',{value:g,selected:g === m.group}, g))))
+    h('div',{class:'m-head'},
+      h('h2',{class:'m-title',text:m.name}),
+      h('div',{class:'m-group'}, h('select',{class:'txt gsel','aria-label':'Body part',onchange:e => {
+        m.group = e.target.value; state.collapsed = state.collapsed.filter(g => g !== m.group); commit(); render();
+      }}, sortedGroups(m.group).map(g => h('option',{value:g,selected:g === m.group}, g)))))
   );
   wrap.append(settingsBlock(m));
 
-  wrap.append(h('div',{class:'lbl',text:'Date'}),
+  wrap.append(
     h('div',{class:'daterow'+(day !== today ? ' past' : '')},
+      h('span',{class:'lbl',text:'Date'}),
       h('input',{class:'txt',type:'date',value:day,max:today,'aria-label':'Date of this workout',
         onchange:e=>{ const v = e.target.value; ui.logDate = (!v || v >= today) ? null : v; render(); }}),
       day !== today ? h('button',{type:'button',class:'btn ghost',onclick:()=>{ ui.logDate = null; render(); }},'Today') : null));
@@ -325,7 +327,8 @@ function entryView(m){
       })));
 
   if(ui.error) wrap.append(h('p',{class:'err',role:'alert',text:ui.error}));
-  wrap.append(h('button',{type:'button',class:'log',onclick:()=>logSet(m)},'Log set '+(todays.length+1)+(day !== today ? ' on '+fmtShort(tsFor(day)) : '')));
+  wrap.append(h('div',{class:'stickybar',style:'margin-top:14px'},   // stays just above the bottom tabs so it is always reachable
+    h('button',{type:'button',class:'log',onclick:()=>logSet(m)},'Log set '+(todays.length+1)+(day !== today ? ' on '+fmtShort(tsFor(day)) : ''))));
 
   wrap.append(h('div',{class:'list-h'}, h('h3',{text: day === today ? 'Today' : fmtDate(tsFor(day))}), h('span',{text: todays.length ? todays.length+(todays.length===1?' set':' sets') : ''})));
   if(!todays.length) wrap.append(h('p',{class:'note',text:'No sets yet. Log your first one above.'}));
@@ -395,8 +398,6 @@ function settingsBlock(m){
     if(shown.length){
       box.append(h('div',{class:'chips'}, shown.map(x => h('div',{class:'chip'},
         h('span',{class:'sname',text:x.name || 'Setting'}), h('b',{text:x.value || '–'})))));
-    }else{
-      box.append(h('p',{class:'note',text:'Save seat height, pad position or anything else you adjust on this one.'}));
     }
     return box;
   }
@@ -796,6 +797,14 @@ function historyView(){
         h('button',{type:'button',class:'btn',onclick:applyImport},'Replace'))) : null,
     state.sets.length ? h('button',{type:'button',class:'linkbtn',style:'margin-top:8px',onclick:exportCsv},'Export sets as CSV for a spreadsheet') : null,
     h('p',{class:'note',style:'margin-top:8px',text:'Your data lives only on this device. Back it up now and then, and before you delete the app or change devices.'})));
+  tools.append(h('div',{},
+    h('div',{class:'lbl',style:'margin-top:0',text:'Erase all data'}),
+    h('p',{class:'note',text:'Deletes every logged set, note, setting, machine and body part you added, then goes back to the starting list. Export a backup first if you might want it back.'}),
+    h('button',{type:'button',class:'remove'+(ui.armedErase?' armed':''),style:'margin-top:8px',onclick:()=>{
+      if(!ui.armedErase){ ui.armedErase = true; render(); return; }
+      eraseAll();
+    }}, ui.armedErase ? 'Tap again to erase everything on this device' : 'Erase all data'),
+    ui.armedErase ? h('button',{type:'button',class:'linkbtn',style:'display:block',onclick:()=>{ ui.armedErase = false; render(); }},'Cancel') : null));
   wrap.append(tools);
   return wrap;
 }
@@ -939,6 +948,13 @@ fileInput.addEventListener('change', async () => {
   render();
 });
 document.body.append(fileInput);
+function eraseAll(){
+  state = normalize(seed());
+  try{ localStorage.removeItem(META_KEY); }catch(e){}     // the "Last backup" note would describe data that is gone
+  ui.armedErase = false; ui.selected = null; ui.histMachine = null; ui.editNote = null; ui.importPending = null; ui.importMsg = '';
+  ui.presetView = false; ui.adding = false; ui.editing = false; ui.logDate = null;
+  commit(); render(false);
+}
 function applyImport(){
   if(!ui.importPending) return;
   state = ui.importPending; ui.importPending = null; ui.importMsg = '';
@@ -960,10 +976,11 @@ function render(keep){
   window.scrollTo(0, keep === false ? 0 : y);
 }
 tabLog.addEventListener('click', ()=>{
+  ui.armedErase = false;
   if(ui.tab === 'log' && (ui.selected || ui.presetView)){ ui.selected = null; ui.error = ''; ui.confirmRemove = false; if(ui.presetView) leavePresets(); }
   ui.tab = 'log'; render(false);
 });
-tabHist.addEventListener('click', ()=>{ ui.tab = 'history'; render(false); });
+tabHist.addEventListener('click', ()=>{ ui.armedErase = false; ui.tab = 'history'; render(false); });
 
 render(false);
 setSync('Saved on this device');
