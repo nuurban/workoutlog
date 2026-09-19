@@ -36,6 +36,7 @@ button{cursor:pointer}
 .top{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
 h1,h2,h3{font-family:"Barlow Condensed","Avenir Next Condensed","HelveticaNeue-CondensedBold","Arial Narrow",Arial,sans-serif;margin:0;font-weight:600}
 h1{font-size:30px;letter-spacing:.01em}
+.ver{font:500 12px "Barlow",Arial,sans-serif;letter-spacing:0;color:var(--steel);opacity:.7;margin-left:4px}
 .sync{font-size:14px;color:var(--steel)}
 .sync.warn{color:var(--danger)}
 .lede{margin:6px 0 0;color:var(--steel)}

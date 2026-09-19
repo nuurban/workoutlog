@@ -1,12 +1,17 @@
 /* Service worker: keeps the app working offline.
    When you change any app file, bump VERSION so phones pick up the new copy. */
-const VERSION = 'v4';
+const VERSION = 'v5';
 const CACHE = 'workout-log-' + VERSION;
 const FONTS = 'workout-log-fonts';
 const ASSETS = [
   './', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png'
 ];
+
+// The page asks which version is running so it can show it next to the title.
+self.addEventListener('message', e => {
+  if(e.data === 'version' && e.ports && e.ports[0]) e.ports[0].postMessage(VERSION);
+});
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));

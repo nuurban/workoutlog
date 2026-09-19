@@ -970,5 +970,17 @@ setSync('Saved on this device');
 try{ if(navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){}
 if('serviceWorker' in navigator){
   window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(() => {}); });
+  // Show the running version (set by VERSION in sw.js). Asked once at startup, so after an update the first open
+  // still shows the old number and the second open shows the new one.
+  const verEl = document.getElementById('ver');
+  const showVersion = () => {
+    const sw = navigator.serviceWorker.controller;
+    if(!sw || verEl.textContent) return;
+    const ch = new MessageChannel();
+    ch.port1.onmessage = e => { if(!verEl.textContent) verEl.textContent = String(e.data); };
+    sw.postMessage('version', [ch.port2]);
+  };
+  showVersion();
+  navigator.serviceWorker.addEventListener('controllerchange', showVersion);   // very first visit: no controller until now
 }
 })();
