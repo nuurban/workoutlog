@@ -147,13 +147,13 @@ function sessionsFor(mid){
   return [...by.values()];
 }
 
-/* ---------- saving: everything stays on this phone ---------- */
+/* ---------- saving: everything stays on this device ---------- */
 let noteTimer = null;
 const syncEl = document.getElementById('sync');
 function setSync(text, warn){ syncEl.textContent = text; syncEl.className = 'sync' + (warn ? ' warn' : ''); }
 
 function commit(){
-  if(cacheLocal()) setSync('Saved on this phone');
+  if(cacheLocal()) setSync('Saved on this device');
   else setSync('Could not save. Free up space, then export a backup.', true);
 }
 function setNote(key, val){
@@ -790,12 +790,12 @@ function historyView(){
       h('button',{type:'button',class:'btn ghost',onclick:()=>fileInput.click()},'Import backup')),
     ui.importMsg ? h('p',{class:'err',role:'alert',text:ui.importMsg}) : null,
     ui.importPending ? h('div',{class:'form',style:'margin-top:12px'},
-      h('p',{style:'margin:0',text:'Replace everything on this phone with this backup ('+ui.importPending.machines.length+' machines and exercises, '+ui.importPending.sets.length+' sets)? Your current data will be lost.'}),
+      h('p',{style:'margin:0',text:'Replace everything on this device with this backup ('+ui.importPending.machines.length+' machines and exercises, '+ui.importPending.sets.length+' sets)? Your current data will be lost.'}),
       h('div',{class:'row'},
         h('button',{type:'button',class:'btn ghost',onclick:()=>{ ui.importPending = null; render(); }},'Cancel'),
         h('button',{type:'button',class:'btn',onclick:applyImport},'Replace'))) : null,
     state.sets.length ? h('button',{type:'button',class:'linkbtn',style:'margin-top:8px',onclick:exportCsv},'Export sets as CSV for a spreadsheet') : null,
-    h('p',{class:'note',style:'margin-top:8px',text:'Your data lives only on this phone. Back it up now and then, and before you delete the app or change phones.'})));
+    h('p',{class:'note',style:'margin-top:8px',text:'Your data lives only on this device. Back it up now and then, and before you delete the app or change devices.'})));
   wrap.append(tools);
   return wrap;
 }
@@ -966,7 +966,7 @@ tabLog.addEventListener('click', ()=>{
 tabHist.addEventListener('click', ()=>{ ui.tab = 'history'; render(false); });
 
 render(false);
-setSync('Saved on this phone');
+setSync('Saved on this device');
 try{ if(navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){}
 if('serviceWorker' in navigator){
   window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(() => {}); });
