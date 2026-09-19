@@ -28,6 +28,7 @@ body{
   font-size:17px; line-height:1.35; -webkit-tap-highlight-color:transparent;
 }
 button,input,select,textarea{font:inherit;color:inherit}
+button,input,select,textarea,label,.nav{touch-action:manipulation}   /* no double-tap zoom when tapping + and − quickly; pinch zoom still works */
 button{cursor:pointer}
 :focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 
