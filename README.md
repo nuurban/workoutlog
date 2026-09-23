@@ -2,7 +2,7 @@
 
 https://github.com/user-attachments/assets/863839b1-6b51-404d-b5d0-a10ad8589b29
 
-# Workout log (iPhone web app)
+# Workout log (iPhone & Android web app)
 
 Everything you log stays on your phone. There is no account and no sync.
 
@@ -18,7 +18,9 @@ Any of these work. Upload the files in this folder exactly as they are.
 
 Menu names on these sites change now and then, so follow their on-screen prompts.
 
-## 2. Install it on your iPhone
+## 2. Install it on your phone
+
+### iPhone
 
 1. Open your new address in **Safari**.
 2. Tap **Share**, then **Add to Home Screen**, then **Add**.
@@ -26,6 +28,18 @@ Menu names on these sites change now and then, so follow their on-screen prompts
 
 Opening it from the icon matters. Safari deletes saved data for sites you haven't visited in about a week,
 but apps opened from the home screen are counted separately.
+
+### Android
+
+1. Open your new address in **Chrome**.
+2. Chrome often shows an **Install app** banner on its own. If not, tap the **⋮** menu, then **Install app**
+   (older versions say **Add to Home screen**).
+3. Confirm. It adds a real home-screen icon that opens full-screen, not just a bookmark.
+
+Other Android browsers (Samsung Internet, Firefox, Edge) offer the same option, usually worded
+"Add to Home screen" or "Install app" in their menu. Android doesn't clear site data for inactivity
+the way Safari does, so this step is mainly about getting a proper full-screen icon rather than protecting your data —
+back up regularly either way.
 
 ## 3. Check it works offline
 

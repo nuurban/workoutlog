@@ -41,6 +41,10 @@ h1{font-size:30px;letter-spacing:.01em}
 .sync.warn{color:var(--danger)}
 .lede{margin:6px 0 0;color:var(--steel)}
 
+.banner{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 14px;
+  background:var(--pin);color:var(--pin-ink);border-radius:10px;padding:12px 14px;margin:0 0 16px;font-weight:500}
+.banner button{flex:none;min-height:40px;padding:0 14px;border:0;border-radius:8px;background:var(--pin-ink);color:var(--pin);font-weight:600}
+
 /* machine picker */
 .group h2{font-size:24px;margin:14px 0 0;border-bottom:1px solid var(--line)}
 .gh{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:48px;padding:8px 0;background:none;border:0;text-align:left;font:inherit;color:inherit}
@@ -127,6 +131,17 @@ h1{font-size:30px;letter-spacing:.01em}
 .set-h{display:flex;justify-content:space-between;align-items:center;margin:6px 0 0}
 .set-h .t{font-size:16px;color:var(--steel);font-weight:500}
 .setting-row{display:grid;grid-template-columns:1fr 104px 44px;gap:8px;align-items:center;margin-top:8px}
+.segment-row{display:grid;grid-template-columns:1fr 74px 74px 44px;gap:8px;align-items:center;margin-top:8px}
+.seg-table{margin-top:10px;background:var(--panel);border-radius:8px;overflow:hidden}
+.seg-toggle{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-height:44px;
+  padding:6px 12px;background:none;border:0;text-align:left;font:inherit;font-weight:500;color:var(--ink)}
+.seg-toggle[aria-expanded="false"] .chev{transform:rotate(-90deg)}
+.seg-body[hidden]{display:none}
+.seg-row{display:grid;grid-template-columns:1fr 74px 74px;gap:8px;padding:7px 12px;font-size:15px}
+.seg-row + .seg-row{border-top:1px solid var(--line)}
+.seg-row.head{color:var(--steel);font:600 12px/1 "Barlow",Arial,sans-serif;text-transform:uppercase;letter-spacing:.03em;padding-bottom:6px}
+.seg-row.head + .seg-row{border-top:0}
+.seg-row span:not(:first-child){text-align:right}
 .settings .chips{margin-top:2px}
 .chip .sname{font-size:14px;color:var(--steel);line-height:1}
 .add-btn.tight{margin-top:10px}

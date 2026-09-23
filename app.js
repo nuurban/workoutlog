@@ -5,6 +5,15 @@ const DEFAULT_GROUPS = ['Chest','Back','Shoulders','Arms','Legs','Core','Other']
 const FEEL = ['Easy','Good','Solid','Hard','Max'];
 const KEY = 'machine-log-v1';
 
+/* Cardio activity ids always start with "c-" so they can never collide with a machine's random id
+   (both are looked up from the same combined History picker and the same shared notes keyspace). */
+const DEFAULT_CARDIO = [
+  {id:'c-treadmill', name:'Treadmill', segmented:true},
+  {id:'c-biking',    name:'Biking',    segmented:false},
+  {id:'c-walking',   name:'Walking',   segmented:false},
+  {id:'c-running',   name:'Running',   segmented:false}
+];
+
 /* Typical machine types and the adjustments they usually have. Not confirmed for any specific club. */
 const DEFAULT_PRESETS = [
   {id:'p-chest-press',  name:'Chest press',      group:'Chest',     settings:['Seat height','Handle position']},
@@ -32,7 +41,7 @@ const clonePresets = () => DEFAULT_PRESETS.map(p => ({id:p.id, name:p.name, grou
 
 /* ---------- state ---------- */
 function seed(){
-  return { v:1, unit:'lb', collapsed:[], notes:{}, sets:[], machines:[
+  return { v:1, unit:'lb', distanceUnit:'mi', collapsed:[], notes:{}, sets:[], machines:[
     {id:'chest-press',   name:'Chest press',    group:'Chest'},
     {id:'pec-fly',       name:'Pec fly',        group:'Chest'},
     {id:'lat-pulldown',  name:'Lat pulldown',   group:'Back'},
@@ -40,7 +49,7 @@ function seed(){
     {id:'shoulder-press',name:'Shoulder press', group:'Shoulders'},
     {id:'leg-press',     name:'Leg press',      group:'Legs'},
     {id:'leg-curl',      name:'Leg curl',       group:'Legs'}
-  ]};
+  ], cardio: DEFAULT_CARDIO.map(x => Object.assign({}, x)), cardioSets:[] };
 }
 function cleanSettings(a){
   if(!Array.isArray(a)) return [];
@@ -57,6 +66,40 @@ function cleanPresets(a){
     group: (typeof x.group === 'string' && x.group.trim()) ? x.group.trim().slice(0,20) : 'Other',
     settings: Array.isArray(x.settings) ? x.settings.filter(t => typeof t === 'string').map(t => t.slice(0,30)).slice(0,30) : []
   }));
+}
+function cleanCardio(a){
+  if(!Array.isArray(a)) return [];
+  return a.filter(x => x && typeof x === 'object').slice(0,50).map(x => {
+    let id = String(x.id || '').trim().slice(0,40);
+    if(!id.startsWith('c-')) id = 'c-' + (id || Math.random().toString(36).slice(2,9));   // never let an id collide with a machine's
+    return { id, name: x.name == null ? '' : String(x.name).slice(0,40), segmented: x.segmented === true };
+  }).filter(x => x.name.trim());
+}
+function cleanCardioSegments(a){
+  if(!Array.isArray(a)) return [];
+  return a.filter(x => x && typeof x === 'object').slice(0,60).map(x => ({
+    id: String(x.id || Math.random().toString(36).slice(2,9)),
+    duration: Math.max(0, Math.round((Number(x.duration)||0)*10)/10),
+    incline:  Math.max(0, Math.round((Number(x.incline)||0)*10)/10),
+    speed:    Math.max(0, Math.round((Number(x.speed)||0)*10)/10)
+  })).filter(x => x.duration > 0);
+}
+function cleanCardioSets(a){
+  if(!Array.isArray(a)) return [];
+  return a.filter(x => x && typeof x === 'object').slice(0,20000).map(x => {
+    const segments = cleanCardioSegments(x.segments);
+    const duration = segments.length ? segments.reduce((s,g)=>s+g.duration,0) : Math.max(0, Number(x.duration) || 0);
+    return {
+      id: String(x.id || Math.random().toString(36).slice(2,9)),
+      activityId: String(x.activityId || ''),
+      ts: Number(x.ts) || Date.now(),
+      duration: Math.round(duration*10)/10,
+      distance: (x.distance == null || x.distance === '') ? null : Math.max(0, Number(x.distance) || 0),
+      feeling: [1,2,3,4,5].includes(Number(x.feeling)) ? Number(x.feeling) : 3,
+      segments: segments.length ? segments : undefined,
+      demo: x.demo === true ? true : undefined
+    };
+  }).filter(x => x.activityId);
 }
 function cleanNotes(n){
   const out = {};
@@ -84,10 +127,13 @@ function normalize(d){
   return {
     v:1,
     unit: d.unit === 'kg' ? 'kg' : 'lb',
+    distanceUnit: d.distanceUnit === 'km' ? 'km' : 'mi',
     groups,
     collapsed: Array.isArray(d.collapsed) ? d.collapsed.filter(g => groups.includes(g)) : [],
     machines,
     sets: Array.isArray(d.sets) ? d.sets : [],
+    cardio: cleanCardio(Array.isArray(d.cardio) ? d.cardio : s.cardio),
+    cardioSets: cleanCardioSets(Array.isArray(d.cardioSets) ? d.cardioSets : []),
     notes: cleanNotes(d.notes),
     presets: Array.isArray(d.presets) ? cleanPresets(d.presets) : null
   };
@@ -101,7 +147,8 @@ function cacheLocal(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); re
 let state = loadLocal() || normalize(seed());
 const ui = {
   tab:'log', selected:null, draft:null, error:'', adding:false, confirmRemove:false, editing:false, armedId:null, metric:'top', logDate:null,
-  histMachine:null, flashId:null, editNote:null, editSettings:false, armedGroup:null, groupMsg:'', dragging:false, importPending:null, importMsg:'', presetView:false, presetEdit:false, presetSel:{}, armedPreset:null, armedReset:false, armedErase:false
+  histMachine:null, flashId:null, editNote:null, editSettings:false, armedGroup:null, groupMsg:'', dragging:false, importPending:null, importMsg:'', presetView:false, presetEdit:false, presetSel:{}, armedPreset:null, armedReset:false, armedErase:false,
+  cardioSelected:null, draftCardio:null, cardioSegments:null, cardioLogDate:null, cardioError:'', cardioMetric:'dur', cardioAdding:false, cardioSegCheck:false, confirmRemoveCardio:false, cardioDraftFor:null
 };
 
 /* ---------- helpers ---------- */
@@ -111,10 +158,20 @@ const tsFor = key => { const [y,m,d] = key.split('-').map(Number), n = new Date(
 const fmtDate = ts => new Date(ts).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
 const fmtShort = ts => new Date(ts).toLocaleDateString(undefined,{month:'short',day:'numeric'});
 const fmtNum = n => String(Math.round(n*10)/10);
+const fmtDuration = mins => {
+  const m = Math.round(Number(mins) || 0);
+  if(m < 60) return m + ' min';
+  return Math.floor(m/60) + 'h ' + (m%60 ? (m%60)+'m' : '');
+};
 const sortedGroups = extra => state.groups.concat(extra && !state.groups.includes(extra) ? [extra] : [])
   .sort((a,b) => a.localeCompare(b, undefined, {sensitivity:'base'}));   // dropdowns only: A to Z. The main screen keeps your own order.
 const machineById = id => state.machines.find(m => m.id === id);
 const setsFor = id => state.sets.filter(s => s.machineId === id);
+const cardioActivityById = id => state.cardio.find(c => c.id === id);
+const cardioSetsFor = id => state.cardioSets.filter(s => s.activityId === id);
+// duration is cached on the record at log time; this recomputes it from segments when present so a stale/edited
+// cache (or a tampered import) can never disagree with what the segments actually add up to.
+const cardioDuration = rec => (rec.segments && rec.segments.length) ? rec.segments.reduce((a,s) => a + s.duration, 0) : (Number(rec.duration) || 0);
 
 function h(tag, attrs, ...kids){
   const el = document.createElement(tag);
@@ -143,6 +200,15 @@ function sessionsFor(mid){
     const k = dk(s.ts);
     if(!by.has(k)) by.set(k,{key:k,ts:s.ts,sets:[]});
     by.get(k).sets.push(s);
+  });
+  return [...by.values()];
+}
+function cardioSessionsFor(aid){
+  const by = new Map();
+  cardioSetsFor(aid).sort((a,b)=>a.ts-b.ts).forEach(s=>{
+    const k = dk(s.ts);
+    if(!by.has(k)) by.set(k,{key:k,ts:s.ts,recs:[]});
+    by.get(k).recs.push(s);
   });
   return [...by.values()];
 }
@@ -314,8 +380,8 @@ function entryView(m){
       h('input',{class:'txt',type:'date',value:day,max:today,'aria-label':'Date of this workout',
         onchange:e=>{ const v = e.target.value; ui.logDate = (!v || v >= today) ? null : v; render(); }}),
       day !== today ? h('button',{type:'button',class:'btn ghost',onclick:()=>{ ui.logDate = null; render(); }},'Today') : null));
-  wrap.append(h('div',{class:'lbl',text:'Weight, '+state.unit}), stepper('weight', step, 'weight', 0));
-  wrap.append(h('div',{class:'lbl',text:'Reps'}), stepper('reps', 1, 'reps', 0));
+  wrap.append(h('div',{class:'lbl',text:'Weight, '+state.unit}), stepper('weight', step, 'weight', 0, true));
+  wrap.append(h('div',{class:'lbl',text:'Reps'}), stepper('reps', 1, 'reps', 0, false));
 
   wrap.append(h('div',{class:'lbl',text:'How it felt'}),
     h('div',{class:'feel',role:'group','aria-label':'How it felt'},
@@ -345,9 +411,10 @@ function entryView(m){
   wrap.append(h('div',{class:'lbl',text:'Notes for this session'}), noteBox(m.id, day));
 
   if(prev){
-    wrap.append(h('div',{class:'last',text:'Last session, '+fmtDate(prev.ts)}),
+    wrap.append(h('div',{},
+      h('div',{class:'last',text:'Last session, '+fmtDate(prev.ts)}),
       h('div',{class:'chips'}, prev.sets.map(s => h('div',{class:'chip'}, h('b',{text:fmtNum(s.weight)+' × '+s.reps}), ticks(s.feeling)))),
-      state.notes[m.id + '@' + prev.key] ? h('p',{class:'note-text',text:state.notes[m.id + '@' + prev.key]}) : null);
+      state.notes[m.id + '@' + prev.key] ? h('p',{class:'note-text',text:state.notes[m.id + '@' + prev.key]}) : null));
   }
 
   if(setsFor(m.id).length) wrap.append(h('div',{style:'margin-top:8px'}, progressBlock(m.id)));
@@ -415,10 +482,10 @@ function settingsBlock(m){
   }},'Add another setting'));
   return box;
 }
-function noteBox(mid, day, autofocus){
+function noteBox(mid, day, autofocus, placeholder){
   const key = mid + '@' + day;
   const ta = h('textarea',{class:'txt note-box',rows:'3',maxlength:'1000','aria-label':'Notes for this session',
-    placeholder:'Seat setting, grip, what to change next time',value:state.notes[key] || '',
+    placeholder: placeholder || 'Seat setting, grip, what to change next time',value:state.notes[key] || '',
     oninput:e => setNote(key, e.target.value), onblur:() => flushNote()});
   if(autofocus) setTimeout(() => ta.focus(), 0);
   return ta;
@@ -439,18 +506,19 @@ function chevron(){
   s.innerHTML = '<svg width="26" height="26" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M12.5 4.5 7 10l5.5 5.5"/></svg>';
   return s;
 }
-function stepper(key, step, label, min){
-  const input = h('input',{type:'text',inputmode: key === 'weight' ? 'decimal' : 'numeric',autocomplete:'off',
-    'aria-label':label, value: ui.draft[key],
+function stepper(key, step, label, min, decimal, obj){
+  obj = obj || ui.draft;
+  const input = h('input',{type:'text',inputmode: decimal ? 'decimal' : 'numeric',autocomplete:'off',
+    'aria-label':label, value: obj[key],
     onfocus:e=>e.target.select(),
     oninput:e=>{
       const v = parseFloat(String(e.target.value).replace(',','.'));
-      ui.draft[key] = isNaN(v) ? '' : v; ui.error = '';
+      obj[key] = isNaN(v) ? '' : v; ui.error = ''; ui.cardioError = '';
     }});
   const bump = d => {
-    const cur = Number(ui.draft[key]) || 0;
-    ui.draft[key] = Math.max(min, Math.round((cur + d) * 10) / 10);
-    input.value = ui.draft[key];
+    const cur = Number(obj[key]) || 0;
+    obj[key] = Math.max(min, Math.round((cur + d) * 10) / 10);
+    input.value = obj[key];
   };
   return h('div',{class:'stepper'},
     h('button',{type:'button','aria-label':'Decrease '+label,onclick:()=>bump(-step)},'−'),
@@ -478,6 +546,234 @@ function logSet(m){
   ui.flashId = s.id; ui.error = '';
   commit(); render();
   try{ if(navigator.vibrate) navigator.vibrate(12); }catch(e){}
+}
+
+/* ---------- cardio tab ---------- */
+function cardioView(){
+  return ui.cardioSelected && cardioActivityById(ui.cardioSelected) ? cardioEntryView(cardioActivityById(ui.cardioSelected)) : cardioPickerView();
+}
+function cardioPickerView(){
+  const today = dk(Date.now());
+  const wrap = h('div');
+  wrap.append(h('p',{class:'lede',text:'Pick an activity.'}));
+  if(!state.cardio.length) wrap.append(h('p',{class:'empty',text:'Nothing here yet. Add the cardio activities you do.'}));
+  wrap.append(h('div',{class:'machines'}, state.cardio.map(c => cardioCard(c, today))));
+  wrap.append(addCardioActivity());
+  return wrap;
+}
+function cardioCard(c, today){
+  const all = cardioSetsFor(c.id);
+  const n = all.filter(s => dk(s.ts) === today).length;
+  let meta = 'Not logged yet';
+  if(n) meta = n + (n === 1 ? ' session today' : ' sessions today');
+  else if(all.length) meta = 'Last done ' + fmtShort(Math.max(...all.map(s=>s.ts)));
+  return h('button',{type:'button',class:'machine'+(n?' done':''),onclick:()=>selectCardio(c.id)},
+    h('span',{class:'name',text:c.name}),
+    h('span',{class:'meta',text:meta})
+  );
+}
+function addCardioActivity(){
+  if(!ui.cardioAdding) return h('button',{type:'button',class:'add-btn',onclick:()=>{
+    ui.cardioAdding = true; ui.cardioSegCheck = false; render(); setTimeout(()=>{ const i=document.getElementById('new-cardio-name'); if(i) i.focus(); },0);
+  }},'Add an activity');
+  const err = h('p',{class:'err',role:'alert'});
+  const name = h('input',{id:'new-cardio-name',class:'txt',type:'text',maxlength:'40',placeholder:'Name, like Swimming or Rowing','aria-label':'Activity name'});
+  const save = () => {
+    const n = name.value.trim();
+    if(!n){ err.textContent = 'Give it a name.'; name.focus(); return; }
+    state.cardio.push({id:'c-'+rid(), name:n.slice(0,40), segmented: ui.cardioSegCheck});
+    ui.cardioAdding = false; commit(); render();
+  };
+  name.addEventListener('keydown', e => { if(e.key === 'Enter') save(); });
+  return h('div',{class:'form'}, name,
+    h('label',{style:'display:flex;align-items:center;gap:10px;min-height:44px'},
+      h('input',{type:'checkbox',checked:ui.cardioSegCheck,onchange:e=>{ ui.cardioSegCheck = e.target.checked; }}),
+      'This activity has segments, like intervals on a treadmill'),
+    err,
+    h('div',{class:'row'},
+      h('button',{type:'button',class:'btn ghost',onclick:()=>{ ui.cardioAdding = false; render(); }},'Cancel'),
+      h('button',{type:'button',class:'btn',onclick:save},'Save')));
+}
+function removeCardioActivity(id){
+  state.cardio = state.cardio.filter(x => x.id !== id);
+  state.cardioSets = state.cardioSets.filter(x => x.activityId !== id);
+  purgeNotes(id);
+  ui.cardioSelected = null; ui.confirmRemoveCardio = false;
+  if(ui.cardioDraftFor === id) ui.cardioDraftFor = null;
+  commit(); render(false);
+}
+function selectCardio(id){
+  const activity = cardioActivityById(id);
+  ui.cardioSelected = id; ui.cardioError = ''; ui.confirmRemoveCardio = false;
+  // Only start a fresh draft when opening a different activity than whatever is already in progress — an
+  // accidental tap on "back" (or a tab switch) and coming straight back must not lose unlogged work.
+  // It's only cleared once you actually log it (see logCardio).
+  if(ui.cardioDraftFor !== id){
+    const last = cardioSetsFor(id).sort((a,b)=>b.ts-a.ts)[0];
+    ui.cardioLogDate = null;
+    ui.cardioSegments = (activity && activity.segmented) ? [{id:rid(), duration:'', incline:'', speed:''}] : null;
+    ui.draftCardio = { duration: last ? last.duration : '', distance: (last && last.distance != null) ? last.distance : '', feeling: last ? last.feeling : 3 };
+    ui.cardioDraftFor = id;
+  }
+  render(false);
+}
+// A small read-only table for a segmented session's breakdown, easier to scan than one long sentence.
+// Collapsed by default — a day of history can hold several of these, and the chip above already gives the total.
+function segmentTable(rec){
+  if(!rec.segments || !rec.segments.length) return null;
+  const speedUnit = state.distanceUnit === 'km' ? 'km/h' : 'mph';
+  const box = h('div',{class:'seg-table'});
+  const body = h('div',{class:'seg-body'});
+  body.append(h('div',{class:'seg-row head'}, h('span',{text:'Duration'}), h('span',{text:'Incline'}), h('span',{text:'Speed'})));
+  rec.segments.forEach(s => body.append(h('div',{class:'seg-row'},
+    h('span',{text:fmtDuration(s.duration)}),
+    h('span',{text:fmtNum(s.incline)}),
+    h('span',{text:fmtNum(s.speed)+' '+speedUnit}))));
+  body.hidden = true;
+  const chev = chevDown();
+  const toggle = h('button',{type:'button',class:'seg-toggle','aria-expanded':'false',onclick:()=>{
+    const open = toggle.getAttribute('aria-expanded') === 'true';
+    toggle.setAttribute('aria-expanded', String(!open));
+    body.hidden = open;
+  }}, h('span',{text:rec.segments.length+(rec.segments.length===1?' segment':' segments')}), chev);
+  box.append(toggle, body);
+  return box;
+}
+function cardioChip(s){
+  const dur = cardioDuration(s);
+  let label = fmtDuration(dur);
+  if(s.distance != null) label += ' · '+fmtNum(s.distance)+' '+state.distanceUnit;
+  if(s.segments && s.segments.length) label += ' · '+s.segments.length+(s.segments.length===1?' seg':' segs');
+  return h('div',{class:'chip'}, h('b',{text:label}), ticks(s.feeling));
+}
+function cardioRow(s, i){
+  const dur = cardioDuration(s);
+  let label = fmtDuration(dur);
+  if(s.distance != null) label += ' · '+fmtNum(s.distance)+' '+state.distanceUnit;
+  if(s.segments && s.segments.length) label += ' · '+s.segments.length+(s.segments.length===1?' segment':' segments');
+  return h('li',{class:'setrow'+(s.id === ui.flashId ? ' flash' : '')},
+    h('span',{class:'sn',text:(i+1)+'.'}),
+    h('span',{class:'sv',text:label}),
+    ticks(s.feeling),
+    h('button',{type:'button',class:'x','aria-label':'Delete session '+(i+1),onclick:()=>{
+      state.cardioSets = state.cardioSets.filter(x => x.id !== s.id); commit(); render();
+    }},'×'));
+}
+function focusLastSegmentDuration(){
+  setTimeout(() => {
+    const els = document.querySelectorAll('.segment-row input[aria-label="Segment duration"]');
+    if(els.length) els[els.length - 1].focus();
+  }, 0);
+}
+function cardioSegmentsBlock(){
+  const box = h('div',{class:'settings'});
+  const totalEl = h('span',{class:'sv'});
+  const refreshTotal = () => { totalEl.textContent = 'Total '+fmtDuration(ui.cardioSegments.reduce((a,s)=>a+(Number(s.duration)||0),0)); };
+  box.append(h('div',{class:'set-h'}, h('span',{class:'t',text:'Segments'}), totalEl));
+  ui.cardioSegments.forEach((seg,i) => box.append(h('div',{class:'segment-row'},
+    h('input',{class:'txt',type:'text',inputmode:'decimal',placeholder:'Minutes','aria-label':'Segment duration',value:seg.duration,
+      onfocus:e=>e.target.select(),
+      oninput:e => { const v = parseFloat(String(e.target.value).replace(',','.')); seg.duration = isNaN(v) ? '' : v; ui.cardioError = ''; refreshTotal(); }}),
+    h('input',{class:'txt',type:'text',inputmode:'decimal',placeholder:'Incline','aria-label':'Segment incline',value:seg.incline,
+      onfocus:e=>e.target.select(),
+      oninput:e => { const v = parseFloat(String(e.target.value).replace(',','.')); seg.incline = isNaN(v) ? '' : v; }}),
+    h('input',{class:'txt',type:'text',inputmode:'decimal',placeholder:'Speed','aria-label':'Segment speed',value:seg.speed,
+      onfocus:e=>e.target.select(),
+      oninput:e => { const v = parseFloat(String(e.target.value).replace(',','.')); seg.speed = isNaN(v) ? '' : v; }}),
+    h('button',{type:'button',class:'x','aria-label':'Remove segment '+(i+1),onclick:()=>{
+      ui.cardioSegments = ui.cardioSegments.filter(x => x.id !== seg.id); render();
+    }},'×'))));
+  box.append(h('button',{type:'button',class:'btn ghost',style:'width:100%;margin-top:10px',onclick:()=>{
+    ui.cardioSegments.push({id:rid(), duration:'', incline:'', speed:''});
+    render(); focusLastSegmentDuration();
+  }},'Add segment'));
+  refreshTotal();
+  return box;
+}
+function logCardio(activity){
+  const ts = tsFor(ui.cardioLogDate || dk(Date.now()));
+  const dv = ui.draftCardio.distance;
+  const distance = (dv === '' || dv == null || isNaN(Number(dv))) ? null : Number(dv);
+  let rec;
+  if(activity.segmented){
+    const segs = ui.cardioSegments.filter(s => Number(s.duration) > 0)
+      .map(s => ({id:s.id, duration:Number(s.duration), incline:Number(s.incline)||0, speed:Number(s.speed)||0}));
+    if(!segs.length){ ui.cardioError = 'Add at least one segment with a duration.'; render(); return; }
+    rec = {id:rid(), activityId:activity.id, ts, duration:segs.reduce((a,s)=>a+s.duration,0), distance, feeling:ui.draftCardio.feeling, segments:segs};
+    ui.cardioSegments = [{id:rid(), duration:'', incline:'', speed:''}];   // a session is one complete workout, not a repeatable set — clear it so a stray tap can't log a duplicate
+  }else{
+    const d = Number(ui.draftCardio.duration);
+    if(ui.draftCardio.duration === '' || isNaN(d) || d <= 0){ ui.cardioError = 'Enter how long you were active.'; render(); return; }
+    rec = {id:rid(), activityId:activity.id, ts, duration:d, distance, feeling:ui.draftCardio.feeling};
+  }
+  state.cardioSets.push(rec);
+  ui.flashId = rec.id; ui.cardioError = '';
+  commit(); render();
+  try{ if(navigator.vibrate) navigator.vibrate(12); }catch(e){}
+}
+function cardioEntryView(activity){
+  const today = dk(Date.now());
+  const day = ui.cardioLogDate || today;
+  const todays = cardioSetsFor(activity.id).filter(s => dk(s.ts) === day).sort((a,b)=>a.ts-b.ts);
+  const prev = cardioSessionsFor(activity.id).filter(s => s.key < day).pop();
+  const wrap = h('div');
+
+  wrap.append(
+    h('button',{type:'button',class:'back',onclick:()=>{ ui.cardioSelected = null; ui.cardioError=''; render(false); }},
+      chevron(), 'All activities'),
+    h('h2',{class:'m-title',text:activity.name})
+  );
+
+  wrap.append(
+    h('div',{class:'daterow'+(day !== today ? ' past' : '')},
+      h('span',{class:'lbl',text:'Date'}),
+      h('input',{class:'txt',type:'date',value:day,max:today,'aria-label':'Date of this session',
+        onchange:e=>{ const v = e.target.value; ui.cardioLogDate = (!v || v >= today) ? null : v; render(); }}),
+      day !== today ? h('button',{type:'button',class:'btn ghost',onclick:()=>{ ui.cardioLogDate = null; render(); }},'Today') : null));
+
+  if(activity.segmented){
+    wrap.append(cardioSegmentsBlock());
+  }else{
+    wrap.append(h('div',{class:'lbl',text:'Duration, minutes'}), stepper('duration', 1, 'Duration', 0, false, ui.draftCardio));
+  }
+  wrap.append(h('div',{class:'lbl',text:'Distance, '+state.distanceUnit+' (optional)'}), stepper('distance', 0.1, 'Distance', 0, true, ui.draftCardio));
+
+  wrap.append(h('div',{class:'lbl',text:'How it felt'}),
+    h('div',{class:'feel',role:'group','aria-label':'How it felt'},
+      FEEL.map((label,i)=>{
+        const lvl = i+1;
+        return h('button',{type:'button',class: lvl <= ui.draftCardio.feeling ? 'fill' : '','aria-pressed': String(lvl === ui.draftCardio.feeling),
+          onclick:()=>{ ui.draftCardio.feeling = lvl; render(); }},
+          h('span',{class:'bar',style:'height:'+(8+lvl*6)+'px'}), label);
+      })));
+
+  if(ui.cardioError) wrap.append(h('p',{class:'err',role:'alert',text:ui.cardioError}));
+  const liveTotal = activity.segmented ? (ui.cardioSegments||[]).reduce((a,s)=>a+(Number(s.duration)||0),0) : (Number(ui.draftCardio.duration)||0);
+  wrap.append(h('div',{class:'stickybar',style:'margin-top:14px'},
+    h('button',{type:'button',class:'log',onclick:()=>logCardio(activity)},'Log session '+(todays.length+1)+' · '+fmtDuration(liveTotal))));
+
+  wrap.append(h('div',{class:'list-h'}, h('h3',{text: day === today ? 'Today' : fmtDate(tsFor(day))}), h('span',{text: todays.length ? todays.length+(todays.length===1?' session':' sessions') : ''})));
+  if(!todays.length) wrap.append(h('p',{class:'note',text:'No sessions yet. Log your first one above.'}));
+  else wrap.append(h('ul',{class:'sets'}, todays.map((s,i)=>cardioRow(s,i))));
+  ui.flashId = null;
+
+  wrap.append(h('div',{class:'lbl',text:'Notes for this session'}), noteBox(activity.id, day, false, 'Route, weather, how the legs felt'));
+
+  if(prev){
+    wrap.append(h('div',{},
+      h('div',{class:'last',text:'Last session, '+fmtDate(prev.ts)}),
+      h('div',{class:'chips'}, prev.recs.map(s => cardioChip(s))),
+      prev.recs.filter(s => s.segments && s.segments.length).map(segmentTable),
+      state.notes[activity.id + '@' + prev.key] ? h('p',{class:'note-text',text:state.notes[activity.id + '@' + prev.key]}) : null));
+  }
+
+  if(cardioSetsFor(activity.id).length) wrap.append(h('div',{style:'margin-top:8px'}, cardioProgressBlock(activity.id)));
+
+  wrap.append(h('button',{type:'button',class:'remove'+(ui.confirmRemoveCardio?' armed':''),onclick:()=>{
+    if(!ui.confirmRemoveCardio){ ui.confirmRemoveCardio = true; render(); return; }
+    removeCardioActivity(activity.id);
+  }}, ui.confirmRemoveCardio ? 'Tap again to remove this and its history' : 'Remove this activity'));
+  return wrap;
 }
 
 /* ---------- reorder body parts on the main screen ---------- */
@@ -755,33 +1051,53 @@ function presetEditor(wrap){
 function historyView(){
   const wrap = h('div');
   const withSets = state.machines.filter(m => setsFor(m.id).length);
-  if(!withSets.length){
-    wrap.append(h('p',{class:'empty',text:'Nothing logged yet. Log a set and your history shows up here.'}));
+  const cardioWithSets = state.cardio.filter(c => cardioSetsFor(c.id).length);
+  if(!withSets.length && !cardioWithSets.length){
+    wrap.append(h('p',{class:'empty',text:'Nothing logged yet. Log a set or a session and your history shows up here.'}));
   }else{
-    if(!withSets.some(m => m.id === ui.histMachine)) ui.histMachine = withSets[0].id;
+    const isCardioId = id => cardioWithSets.some(c => c.id === id);
+    if(!withSets.some(m => m.id === ui.histMachine) && !isCardioId(ui.histMachine))
+      ui.histMachine = withSets.length ? withSets[0].id : cardioWithSets[0].id;
     wrap.append(h('div',{class:'picker'},
-      h('select',{class:'txt','aria-label':'Machine or exercise',onchange:e=>{ ui.histMachine = e.target.value; render(); }},
-        withSets.map(m => h('option',{value:m.id,selected:m.id === ui.histMachine}, m.name)))));
+      h('select',{class:'txt','aria-label':'Machine, exercise or activity',onchange:e=>{ ui.histMachine = e.target.value; render(); }},
+        withSets.length ? h('optgroup',{label:'Strength'}, withSets.map(m => h('option',{value:m.id,selected:m.id === ui.histMachine}, m.name))) : null,
+        cardioWithSets.length ? h('optgroup',{label:'Cardio'}, cardioWithSets.map(c => h('option',{value:c.id,selected:c.id === ui.histMachine}, c.name))) : null)));
 
-    const sessions = sessionsFor(ui.histMachine);
-    wrap.append(progressBlock(ui.histMachine));
+    if(isCardioId(ui.histMachine)){
+      wrap.append(cardioProgressBlock(ui.histMachine));
+      cardioSessionsFor(ui.histMachine).slice().reverse().slice(0,40).forEach(sn=>{
+        const totalMin = sn.recs.reduce((a,x)=>a+cardioDuration(x),0);
+        wrap.append(h('div',{class:'session'},
+          h('div',{class:'s-head'}, h('strong',{text:fmtDate(sn.ts)}),
+            h('span',{text:sn.recs.length+(sn.recs.length===1?' session, ':' sessions, ')+fmtDuration(totalMin)+' total'})),
+          h('div',{class:'chips'}, sn.recs.map(s => cardioChip(s))),
+          sn.recs.filter(s => s.segments && s.segments.length).map(segmentTable),
+          noteRow(ui.histMachine, sn.key)));
+      });
+    }else{
+      const sessions = sessionsFor(ui.histMachine);
+      wrap.append(progressBlock(ui.histMachine));
 
-    sessions.slice().reverse().slice(0,40).forEach(s=>{
-      const vol = s.sets.reduce((a,x)=>a + x.weight*x.reps, 0);
-      wrap.append(h('div',{class:'session'},
-        h('div',{class:'s-head'}, h('strong',{text:fmtDate(s.ts)}),
-          h('span',{text:s.sets.length+(s.sets.length===1?' set, ':' sets, ')+(vol > 0 ? Math.round(vol).toLocaleString()+' '+state.unit+' moved' : s.sets.reduce((a,x)=>a+x.reps,0)+' reps')})),
-        h('div',{class:'chips'}, s.sets.map(x => h('div',{class:'chip'}, h('b',{text:fmtNum(x.weight)+' × '+x.reps}), ticks(x.feeling)))),
-        noteRow(ui.histMachine, s.key)));
-    });
+      sessions.slice().reverse().slice(0,40).forEach(s=>{
+        const vol = s.sets.reduce((a,x)=>a + x.weight*x.reps, 0);
+        wrap.append(h('div',{class:'session'},
+          h('div',{class:'s-head'}, h('strong',{text:fmtDate(s.ts)}),
+            h('span',{text:s.sets.length+(s.sets.length===1?' set, ':' sets, ')+(vol > 0 ? Math.round(vol).toLocaleString()+' '+state.unit+' moved' : s.sets.reduce((a,x)=>a+x.reps,0)+' reps')})),
+          h('div',{class:'chips'}, s.sets.map(x => h('div',{class:'chip'}, h('b',{text:fmtNum(x.weight)+' × '+x.reps}), ticks(x.feeling)))),
+          noteRow(ui.histMachine, s.key)));
+      });
+    }
   }
 
   const tools = h('div',{class:'tools'});
   tools.append(h('div',{},
     h('div',{class:'lbl',style:'margin-top:0',text:'Units'}),
-    h('div',{class:'seg',role:'group','aria-label':'Units'},
+    h('div',{class:'seg',role:'group','aria-label':'Weight units'},
       ['lb','kg'].map(u => h('button',{type:'button',class:state.unit===u?'on':'','aria-pressed':String(state.unit===u),
         onclick:()=>{ state.unit = u; commit(); render(); }}, u))),
+    h('div',{class:'seg',role:'group','aria-label':'Distance units',style:'margin-top:8px'},
+      ['mi','km'].map(u => h('button',{type:'button',class:state.distanceUnit===u?'on':'','aria-pressed':String(state.distanceUnit===u),
+        onclick:()=>{ state.distanceUnit = u; commit(); render(); }}, u))),
     h('p',{class:'note',style:'margin-top:8px',text:'Switching units does not convert past entries.'})));
   tools.append(h('div',{},
     h('div',{class:'lbl',style:'margin-top:0',text:'Backup'}),
@@ -791,11 +1107,12 @@ function historyView(){
       h('button',{type:'button',class:'btn ghost',onclick:()=>fileInput.click()},'Import backup')),
     ui.importMsg ? h('p',{class:'err',role:'alert',text:ui.importMsg}) : null,
     ui.importPending ? h('div',{class:'form',style:'margin-top:12px'},
-      h('p',{style:'margin:0',text:'Replace everything on this device with this backup ('+ui.importPending.machines.length+' machines and exercises, '+ui.importPending.sets.length+' sets)? Your current data will be lost.'}),
+      h('p',{style:'margin:0',text:'Replace everything on this device with this backup ('+ui.importPending.machines.length+' machines and exercises, '+ui.importPending.sets.length+' sets, '+ui.importPending.cardioSets.length+' cardio sessions)? Your current data will be lost.'}),
       h('div',{class:'row'},
         h('button',{type:'button',class:'btn ghost',onclick:()=>{ ui.importPending = null; render(); }},'Cancel'),
         h('button',{type:'button',class:'btn',onclick:applyImport},'Replace'))) : null,
     state.sets.length ? h('button',{type:'button',class:'linkbtn',style:'margin-top:8px',onclick:exportCsv},'Export sets as CSV for a spreadsheet') : null,
+    state.cardioSets.length ? h('div',{style:'margin-top:6px'}, h('button',{type:'button',class:'linkbtn',onclick:exportCardioCsv},'Export cardio as CSV for a spreadsheet')) : null,
     h('p',{class:'note',style:'margin-top:8px',text:'Your data lives only on this device. Back it up now and then, and before you delete the app or change devices.'})));
   tools.append(h('div',{},
     h('div',{class:'lbl',style:'margin-top:0',text:'Erase all data'}),
@@ -840,6 +1157,34 @@ function axisRange(minV, maxV){
   return {lo, hi};
 }
 
+// Shared by progressBlock (strength) and cardioProgressBlock (cardio) so the chart is drawn identically for both.
+function buildLineChart(pts, met, readout){
+  const unit = met.unit();
+  const W=320,H=150,pl=38,pr=12,pt=12,pb=26;
+  const {lo,hi} = axisRange(Math.min(...pts.map(p=>p.v)), Math.max(...pts.map(p=>p.v)));
+  const x = i => pl + i*(W-pl-pr)/(pts.length-1);
+  const y = v => pt + (1-(v-lo)/(hi-lo))*(H-pt-pb);
+  let svg = '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+met.title+', from '+fmtVal(pts[0].v)+' to '+fmtVal(pts[pts.length-1].v)+' '+unit+'">';
+  [lo,(lo+hi)/2,hi].forEach(v=>{
+    svg += '<line class="gl" x1="'+pl+'" x2="'+(W-pr)+'" y1="'+y(v).toFixed(1)+'" y2="'+y(v).toFixed(1)+'"/>';
+    svg += '<text class="ax" x="'+(pl-6)+'" y="'+(y(v)+4).toFixed(1)+'" text-anchor="end">'+fmtTick(v)+'</text>';
+  });
+  svg += '<path class="ln" d="'+pts.map((p,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(p.v).toFixed(1)).join(' ')+'"/>';
+  pts.forEach((p,i)=>{
+    svg += '<circle class="pt" data-i="'+i+'" cx="'+x(i).toFixed(1)+'" cy="'+y(p.v).toFixed(1)+'" r="'+(i===pts.length-1?6.5:4.5)+'"/>';
+    svg += '<circle class="hit" data-i="'+i+'" cx="'+x(i).toFixed(1)+'" cy="'+y(p.v).toFixed(1)+'" r="15"/>';
+  });
+  svg += '<text class="ax" x="'+pl+'" y="'+(H-6)+'" text-anchor="start">'+fmtShort(pts[0].ts)+'</text>';
+  svg += '<text class="ax" x="'+(W-pr)+'" y="'+(H-6)+'" text-anchor="end">'+fmtShort(pts[pts.length-1].ts)+'</text>';
+  svg += '</svg>';
+  const holder = h('div'); holder.innerHTML = svg;
+  holder.querySelectorAll('circle.hit').forEach(c => c.addEventListener('click', () => {
+    const i = Number(c.getAttribute('data-i'));
+    holder.querySelectorAll('circle.pt').forEach((d,j) => d.setAttribute('r', j === i ? 6.5 : 4.5));
+    readout.textContent = fmtDate(pts[i].ts)+': '+fmtVal(pts[i].v)+' '+unit;
+  }));
+  return holder;
+}
 function progressBlock(mid){
   const all = setsFor(mid);
   const allZero = all.length > 0 && all.every(x => x.weight === 0);
@@ -863,32 +1208,39 @@ function progressBlock(mid){
     : (delta > 0 ? 'Up ' : 'Down ')+fmtVal(Math.abs(delta))+' '+unit+' since '+fmtShort(first.ts)}));
   const readout = h('p',{class:'readout',text:fmtDate(last.ts)+': '+fmtVal(last.v)+' '+unit});
   box.append(readout);
-
-  const W=320,H=150,pl=38,pr=12,pt=12,pb=26;
-  const {lo,hi} = axisRange(Math.min(...pts.map(p=>p.v)), Math.max(...pts.map(p=>p.v)));
-  const x = i => pl + i*(W-pl-pr)/(pts.length-1);
-  const y = v => pt + (1-(v-lo)/(hi-lo))*(H-pt-pb);
-  let svg = '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+met.title+', from '+fmtVal(first.v)+' to '+fmtVal(last.v)+' '+unit+'">';
-  [lo,(lo+hi)/2,hi].forEach(v=>{
-    svg += '<line class="gl" x1="'+pl+'" x2="'+(W-pr)+'" y1="'+y(v).toFixed(1)+'" y2="'+y(v).toFixed(1)+'"/>';
-    svg += '<text class="ax" x="'+(pl-6)+'" y="'+(y(v)+4).toFixed(1)+'" text-anchor="end">'+fmtTick(v)+'</text>';
-  });
-  svg += '<path class="ln" d="'+pts.map((p,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(p.v).toFixed(1)).join(' ')+'"/>';
-  pts.forEach((p,i)=>{
-    svg += '<circle class="pt" data-i="'+i+'" cx="'+x(i).toFixed(1)+'" cy="'+y(p.v).toFixed(1)+'" r="'+(i===pts.length-1?6.5:4.5)+'"/>';
-    svg += '<circle class="hit" data-i="'+i+'" cx="'+x(i).toFixed(1)+'" cy="'+y(p.v).toFixed(1)+'" r="15"/>';
-  });
-  svg += '<text class="ax" x="'+pl+'" y="'+(H-6)+'" text-anchor="start">'+fmtShort(first.ts)+'</text>';
-  svg += '<text class="ax" x="'+(W-pr)+'" y="'+(H-6)+'" text-anchor="end">'+fmtShort(last.ts)+'</text>';
-  svg += '</svg>';
-  const holder = h('div'); holder.innerHTML = svg;
-  holder.querySelectorAll('circle.hit').forEach(c => c.addEventListener('click', () => {
-    const i = Number(c.getAttribute('data-i'));
-    holder.querySelectorAll('circle.pt').forEach((d,j) => d.setAttribute('r', j === i ? 6.5 : 4.5));
-    readout.textContent = fmtDate(pts[i].ts)+': '+fmtVal(pts[i].v)+' '+unit;
-  }));
-  box.append(holder);
+  box.append(buildLineChart(pts, met, readout));
   if(met.id === 'e1rm') box.append(h('p',{class:'fine',text:'Estimated with the Epley formula. Least reliable above about 10 reps.'}));
+  return box;
+}
+const CARDIO_METRICS = [
+  {id:'dur',  label:'Duration', title:'Duration per session',
+   fn:recs => recs.reduce((a,x) => a + cardioDuration(x), 0), unit:() => 'min'},
+  {id:'dist', label:'Distance', title:'Distance per session',
+   fn:recs => recs.reduce((a,x) => a + (x.distance || 0), 0), unit:() => state.distanceUnit}
+];
+function cardioProgressBlock(aid){
+  const hasDistance = cardioSetsFor(aid).some(x => (x.distance || 0) > 0);
+  const met = CARDIO_METRICS.find(m => m.id === (hasDistance ? ui.cardioMetric : 'dur')) || CARDIO_METRICS[0];
+  const box = h('div',{class:'chart'}, h('h3',{text:met.title}));
+  if(hasDistance){
+    box.append(h('div',{class:'seg',role:'group','aria-label':'Progress measure'},
+      CARDIO_METRICS.map(m => h('button',{type:'button',class:m.id===met.id?'on':'','aria-pressed':String(m.id===met.id),
+        onclick:()=>{ ui.cardioMetric = m.id; render(); }}, m.label))));
+  }
+  const sessions = cardioSessionsFor(aid);
+  if(sessions.length < 2){
+    box.append(h('p',{class:'hint',text:'Log this in another session to see your progress.'}));
+    return box;
+  }
+  const pts = sessions.slice(-20).map(sn => ({ts:sn.ts, v:met.fn(sn.recs)}));
+  const first = pts[0], last = pts[pts.length-1], unit = met.unit();
+  const delta = last.v - first.v;
+  box.append(h('p',{class:'sum',text: Math.abs(delta) < 0.05
+    ? 'No change since '+fmtShort(first.ts)
+    : (delta > 0 ? 'Up ' : 'Down ')+fmtVal(Math.abs(delta))+' '+unit+' since '+fmtShort(first.ts)}));
+  const readout = h('p',{class:'readout',text:fmtDate(last.ts)+': '+fmtVal(last.v)+' '+unit});
+  box.append(readout);
+  box.append(buildLineChart(pts, met, readout));
   return box;
 }
 
@@ -896,6 +1248,18 @@ function progressBlock(mid){
 const META_KEY = 'machine-log-meta';
 function lastBackup(){ try{ return JSON.parse(localStorage.getItem(META_KEY) || '{}').lastBackup || 0; }catch(e){ return 0; } }
 function markBackup(){ try{ localStorage.setItem(META_KEY, JSON.stringify({lastBackup: Date.now()})); }catch(e){} }
+const BACKUP_REMINDER_DAYS = 30;
+// Shown on every tab once a backup is overdue — nothing here can protect data from a lost, reset or deleted-app
+// phone except an actual export, so this nags until one happens rather than sitting quietly in the History tools.
+function backupBanner(){
+  if(!state.sets.length && !state.cardioSets.length) return null;
+  const last = lastBackup();
+  const days = last ? Math.floor((Date.now() - last) / 86400000) : null;
+  if(last && days < BACKUP_REMINDER_DAYS) return null;
+  return h('div',{class:'banner',role:'status'},
+    h('span',{text: last ? 'It’s been ' + days + ' days since your last backup.' : 'You haven’t backed up your data yet.'}),
+    h('button',{type:'button',onclick:exportBackup},'Back up now'));
+}
 
 // Opens the iPhone share sheet (Save to Files, AirDrop, email) when it can, otherwise downloads the file.
 async function saveFile(name, mime, text){
@@ -932,6 +1296,23 @@ async function exportCsv(){
   });
   await saveFile('workout-log-' + dk(Date.now()) + '.csv', 'text/csv', '\ufeff' + rows.map(r => r.map(q).join(',')).join('\n'));
 }
+async function exportCardioCsv(){
+  const q = v => '"' + String(v).replace(/"/g,'""') + '"';
+  const speedUnit = state.distanceUnit === 'km' ? 'km/h' : 'mph';
+  const rows = [['date','time','activity','segment','of','duration_min','incline','speed_'+speedUnit,'distance_'+state.distanceUnit,'feeling_1_to_5','session_note']];
+  state.cardioSets.slice().sort((a,b)=>a.ts-b.ts).forEach(rec=>{
+    const act = cardioActivityById(rec.activityId); if(!act) return;
+    const d = new Date(rec.ts);
+    const date = dk(rec.ts), time = d.toTimeString().slice(0,5);
+    const note = state.notes[act.id+'@'+date] || '';
+    const segs = (rec.segments && rec.segments.length) ? rec.segments : [{duration:rec.duration, incline:'', speed:''}];
+    segs.forEach((seg,i)=>{
+      rows.push([date, time, act.name, i+1, segs.length, seg.duration, seg.incline, seg.speed,
+        i===0 ? (rec.distance == null ? '' : rec.distance) : '', i===0 ? rec.feeling : '', i===0 ? note : '']);
+    });
+  });
+  await saveFile('workout-log-cardio-' + dk(Date.now()) + '.csv', 'text/csv', '﻿' + rows.map(r => r.map(q).join(',')).join('\n'));
+}
 const fileInput = h('input',{type:'file',accept:'application/json,.json',style:'display:none','aria-hidden':'true',tabindex:'-1'});
 fileInput.addEventListener('change', async () => {
   const f = fileInput.files && fileInput.files[0];
@@ -953,34 +1334,46 @@ function eraseAll(){
   try{ localStorage.removeItem(META_KEY); }catch(e){}     // the "Last backup" note would describe data that is gone
   ui.armedErase = false; ui.selected = null; ui.histMachine = null; ui.editNote = null; ui.importPending = null; ui.importMsg = '';
   ui.presetView = false; ui.adding = false; ui.editing = false; ui.logDate = null;
+  ui.cardioSelected = null; ui.cardioLogDate = null; ui.cardioAdding = false; ui.confirmRemoveCardio = false;
+  ui.cardioError = ''; ui.cardioSegments = null; ui.draftCardio = null; ui.cardioMetric = 'dur'; ui.cardioDraftFor = null;
   commit(); render(false);
 }
 function applyImport(){
   if(!ui.importPending) return;
   state = ui.importPending; ui.importPending = null; ui.importMsg = '';
-  ui.selected = null; ui.presetView = false;
+  ui.selected = null; ui.presetView = false; ui.cardioSelected = null; ui.cardioDraftFor = null;
   commit(); render(false);
 }
 
 /* ---------- shell ---------- */
 const root = document.getElementById('root');
 const tabLog = document.getElementById('tab-log');
+const tabCardio = document.getElementById('tab-cardio');
 const tabHist = document.getElementById('tab-hist');
 function render(keep){
   const y = window.scrollY;
-  root.replaceChildren(ui.tab === 'log' ? logView() : historyView());
+  const content = ui.tab === 'log' ? logView() : ui.tab === 'cardio' ? cardioView() : historyView();
+  const banner = backupBanner();
+  root.replaceChildren(banner ? h('div',{}, banner, content) : content);
   tabLog.classList.toggle('on', ui.tab === 'log');
+  tabCardio.classList.toggle('on', ui.tab === 'cardio');
   tabHist.classList.toggle('on', ui.tab === 'history');
   tabLog.setAttribute('aria-current', ui.tab === 'log' ? 'page' : 'false');
+  tabCardio.setAttribute('aria-current', ui.tab === 'cardio' ? 'page' : 'false');
   tabHist.setAttribute('aria-current', ui.tab === 'history' ? 'page' : 'false');
   window.scrollTo(0, keep === false ? 0 : y);
 }
 tabLog.addEventListener('click', ()=>{
-  ui.armedErase = false;
+  ui.armedErase = false; ui.confirmRemoveCardio = false;
   if(ui.tab === 'log' && (ui.selected || ui.presetView)){ ui.selected = null; ui.error = ''; ui.confirmRemove = false; if(ui.presetView) leavePresets(); }
   ui.tab = 'log'; render(false);
 });
-tabHist.addEventListener('click', ()=>{ ui.armedErase = false; ui.tab = 'history'; render(false); });
+tabCardio.addEventListener('click', ()=>{
+  ui.armedErase = false;
+  if(ui.tab === 'cardio' && ui.cardioSelected){ ui.cardioSelected = null; ui.cardioError = ''; ui.confirmRemoveCardio = false; }
+  ui.tab = 'cardio'; render(false);
+});
+tabHist.addEventListener('click', ()=>{ ui.armedErase = false; ui.confirmRemoveCardio = false; ui.tab = 'history'; render(false); });
 
 render(false);
 setSync('Saved on this device');
